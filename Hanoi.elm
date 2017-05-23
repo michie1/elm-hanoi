@@ -5,125 +5,231 @@ import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Css
 import Array
+import Set exposing (..)
 
 
 type alias Disk =
-    { size : Int
-    }
+    Int
 
 
 type alias Rod =
-    { disks : List Disk
-    }
+    Set Disk
+
+
+type Tower
+    = Left
+    | Middle
+    | Right
 
 
 type alias Model =
     { title : String
-    , rods : Array.Array Rod
-    , selectedRod : Maybe Int
+    , left : Rod
+    , middle : Rod
+    , right : Rod
+    , picked : Maybe Tower
     }
 
 
 defaultState =
     Model
         "Hanoi!"
-        (Array.fromList
-            [ Rod [ Disk 1, Disk 2 ]
-            , Rod []
-            , Rod [ Disk 3 ]
-            ]
-        )
+        (empty |> insert 1 |> insert 2)
+        (empty |> insert 3 |> insert 4)
+        (empty |> insert 5 |> insert 6)
         Nothing
 
 
 type Msg
     = SetTitle String
     | SelectRod Int
-    | Drop Int
+    | Drop Tower
     | Reset
+    | Pick Tower
 
 
 update : Msg -> Model -> Model
-update msg model =
+update msg state =
     case msg of
         SetTitle title ->
-            { model | title = title }
+            state
 
         SelectRod index ->
-            { model | selectedRod = Just index }
+            state
 
-        Drop index ->
-            case model.selectedRod of
+        Pick tower ->
+            { state | picked = Just tower }
+
+        Drop dropped ->
+            case getMinDisk state dropped of
+                Just to ->
+                    case state.picked of
+                        Just picked ->
+                            case getMinDisk state picked of
+                                Just from ->
+                                    if from <= to then
+                                        let
+                                            left = move state Left picked dropped from to
+                                            middle = move state Middle picked dropped from to
+                                            right = move state Right picked dropped from to
+                                        in
+                                            { state
+                                                | picked = Nothing
+                                                , left = left
+                                                , middle = middle
+                                                , right = right
+                                            }
+                                    else
+                                        state
+
+                                Nothing ->
+                                    state
+
+                        Nothing ->
+                            state
+
                 Nothing ->
-                    model
-
-                Just selected ->
-                    { model
-                        | selectedRod = Nothing
-                        , rods = move selected index model.rods
-                    }
+                    state
 
         _ ->
-            model
+            state
 
 
--- TODO: check size of disks and if they can be placed on top
+move : Model -> Tower -> Tower -> Tower -> Disk -> Disk -> Rod
+move state tower picked dropped from to =
+    case tower of
+        Left -> 
+            case picked of
+                Left ->
+                    case dropped of
+                        Left ->
+                            state.left
 
-move : Int -> Int -> Array.Array Rod -> Array.Array Rod
-move fromIndex toIndex rods =
-    case Array.get fromIndex rods of
-        Just from ->
-            case Array.get toIndex rods of
-                Just to ->
-                    let
-                        nextFrom = { from | disks = from.disks |> List.take ((List.length from.disks) - 1) }
-                        nextTo = { to | disks = List.concat [ to.disks, from.disks |> List.drop ((List.length from.disks) - 1) ] }
-                    in
-                        rods |> Array.set fromIndex nextFrom |> Array.set toIndex nextTo
+                        _ ->
+                            getRod picked state |> remove from
 
-                Nothing ->
-                    rods
+                _ ->
+                    case dropped of
+                        Left ->
+                            getRod picked state |> insert to
 
-        Nothing ->
-            rods
+                        _ ->
+                            state.left
+        Middle -> 
+            case picked of
+                Middle ->
+                    case dropped of
+                        Middle ->
+                            state.middle
+
+                        _ ->
+                            getRod picked state |> remove from
+
+                _ ->
+                    case dropped of
+                        Middle ->
+                            getRod picked state |> insert to
+
+                        _ ->
+                            state.middle   
+        Right -> 
+            case picked of
+                Right ->
+                    case dropped of
+                        Right ->
+                            state.right
+
+                        _ ->
+                            getRod picked state |> remove from
+
+                _ ->
+                    case dropped of
+                        Right ->
+                            getRod picked state |> insert to
+
+                        _ ->
+                            state.right
+
+getRod : Tower -> Model -> Rod
+getRod tower state =
+    case tower of
+        Left ->
+            state.left
+
+        Middle ->
+            state.middle
+
+        Right ->
+            state.right
+
+
+getMinDisk : Model -> Tower -> Maybe Disk
+getMinDisk state tower =
+    let
+        rod =
+            getRod tower state
+    in
+        rod |> toList |> List.head
 
 
 view : Model -> Html Msg
-view model =
+view state =
     div [ class "hanoi" ]
-        [ h1 [] [ text model.title ]
-        , div [ class "rods", styles [] ] [ renderRods model.rods model.selectedRod ]
+        [ h1 [] [ text state.title ]
+        , span [] [ text <| "Picked: " ++ toString state.picked ]
+        , viewRod state Left
+        , viewRod state Middle
+        , viewRod state Right
         ]
 
 
-renderRods : Array.Array Rod -> Maybe Int -> Html Msg
-renderRods rods maybeSelectedRod =
-    ul [ styles [ Css.height (Css.px 50), Css.listStyle Css.none ] ]
-        (List.indexedMap
-            (\index rod ->
-                li [ styles [ Css.display Css.inlineBlock ] ] [ (renderRod index rod.disks maybeSelectedRod) ]
-            )
-            (Array.toList rods)
-        )
+viewRod : Model -> Tower -> Html Msg
+viewRod state tower =
+    let
+        rod =
+            getRod tower state
+
+        maybePicked =
+            state.picked
+    in
+        ul []
+            [ li []
+                [ ul [] <|
+                    (rod
+                        |> toList
+                        |> List.map
+                            (\disk ->
+                                li [] [ disk |> toString |> text ]
+                            )
+                    )
+                ]
+            , li [] [ button [ onClick <| Pick tower, disabled <| maybePicked /= Nothing ] [ text "Pick" ] ]
+            , li [] [ button [ onClick <| Drop tower, disabled <| disableDrop state tower ] [ text "Drop" ] ]
+            ]
 
 
-styles =
-    Css.asPairs >> Html.Attributes.style
+disableDrop : Model -> Tower -> Bool
+disableDrop state tower =
+    case getMinDisk state tower of
+        Just to ->
+            case state.picked of
+                Just picked ->
+                    case getMinDisk state picked of
+                        Just from ->
+                            let
+                                _ =
+                                    Debug.log "tower" (toString tower)
+                            in
+                                Debug.log "from < to" (from > to)
 
+                        Nothing ->
+                            False
 
-renderRod : Int -> List Disk -> Maybe Int -> Html Msg
-renderRod index disks maybeSelectedRod =
-    ul [ class "disks", styles [ Css.verticalAlign Css.bottom, Css.display Css.block, Css.listStyle Css.none ] ]
-        ((List.map
-            (\disk ->
-                li [ styles [ Css.width (Css.px 100) ] ] [ text (toString disk.size) ]
-            )
-            (List.reverse disks)
-         )
-            ++ [ li [] [ button [ onClick (SelectRod index), disabled ((List.length disks) == 0) ] [ text "Select" ] ]
-               , li [] [ button [ onClick (Drop index), disabled (maybeSelectedRod == Nothing) ] [ text "Drop" ] ]
-               ]
-        )
+                Nothing ->
+                    True
+
+        Nothing ->
+            False
 
 
 main =
