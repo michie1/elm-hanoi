@@ -11,10 +11,8 @@ import Set exposing (..)
 type alias Disk =
     Int
 
-
 type alias Rod =
     Set Disk
-
 
 type Tower
     = Left
@@ -34,9 +32,9 @@ type alias Model =
 defaultState =
     Model
         "Hanoi!"
-        (empty |> insert 1 |> insert 2)
-        (empty |> insert 3 |> insert 4)
-        (empty |> insert 5 |> insert 6)
+        (empty |> insert 1 |> insert 2 |> insert 3)
+        (empty)
+        (empty)
         Nothing
 
 
@@ -61,35 +59,37 @@ update msg state =
             { state | picked = Just tower }
 
         Drop dropped ->
-            case getMinDisk state dropped of
-                Just to ->
-                    case state.picked of
-                        Just picked ->
-                            case getMinDisk state picked of
-                                Just from ->
-                                    if from <= to then
-                                        let
-                                            left = move state Left picked dropped from to
-                                            middle = move state Middle picked dropped from to
-                                            right = move state Right picked dropped from to
-                                        in
+            Maybe.withDefault state <|
+                case ( getMinDisk state dropped, state.picked ) of
+                    ( Just to, Just picked ) ->
+                        case getMinDisk state picked of
+                            Just from ->
+                                if from <= to then
+                                    let
+                                        left =
+                                            move state Left picked dropped from to
+
+                                        middle =
+                                            move state Middle picked dropped from to
+
+                                        right =
+                                            move state Right picked dropped from to
+                                    in
+                                        Just
                                             { state
                                                 | picked = Nothing
                                                 , left = left
                                                 , middle = middle
                                                 , right = right
                                             }
-                                    else
-                                        state
+                                else
+                                    Nothing
 
-                                Nothing ->
-                                    state
+                            Nothing ->
+                                Nothing
 
-                        Nothing ->
-                            state
-
-                Nothing ->
-                    state
+                    ( _, _ ) ->
+                        Nothing
 
         _ ->
             state
@@ -97,58 +97,15 @@ update msg state =
 
 move : Model -> Tower -> Tower -> Tower -> Disk -> Disk -> Rod
 move state tower picked dropped from to =
-    case tower of
-        Left -> 
-            case picked of
-                Left ->
-                    case dropped of
-                        Left ->
-                            state.left
+    if picked == dropped then
+        getRod tower state
+    else if tower == picked then
+        getRod picked state |> remove from
+    else if tower == dropped then
+        getRod picked state |> insert to
+    else
+        getRod tower state
 
-                        _ ->
-                            getRod picked state |> remove from
-
-                _ ->
-                    case dropped of
-                        Left ->
-                            getRod picked state |> insert to
-
-                        _ ->
-                            state.left
-        Middle -> 
-            case picked of
-                Middle ->
-                    case dropped of
-                        Middle ->
-                            state.middle
-
-                        _ ->
-                            getRod picked state |> remove from
-
-                _ ->
-                    case dropped of
-                        Middle ->
-                            getRod picked state |> insert to
-
-                        _ ->
-                            state.middle   
-        Right -> 
-            case picked of
-                Right ->
-                    case dropped of
-                        Right ->
-                            state.right
-
-                        _ ->
-                            getRod picked state |> remove from
-
-                _ ->
-                    case dropped of
-                        Right ->
-                            getRod picked state |> insert to
-
-                        _ ->
-                            state.right
 
 getRod : Tower -> Model -> Rod
 getRod tower state =
@@ -216,11 +173,7 @@ disableDrop state tower =
                 Just picked ->
                     case getMinDisk state picked of
                         Just from ->
-                            let
-                                _ =
-                                    Debug.log "tower" (toString tower)
-                            in
-                                Debug.log "from < to" (from > to)
+                            from > to
 
                         Nothing ->
                             False
